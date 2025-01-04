@@ -1,3 +1,4 @@
+import tiktoken
 import streamlit as st
 import faiss
 import numpy as np
@@ -7,6 +8,10 @@ from langchain_groq import ChatGroq
 from langchain.schema import SystemMessage, HumanMessage, AIMessage
 
 st.set_page_config(page_title="چت بات FAQ General", page_icon=":speech_balloon:", layout="centered")
+
+# Initialize the tokenizer for token counting (using a model similar to GPT-3 or GPT-4)
+tokenizer = tiktoken.get_encoding("cl100k_base")
+
 def get_base64_encoded_image(image_path):
     with open(image_path, "rb") as image_file:
         import base64
@@ -33,8 +38,6 @@ if 'messages' not in st.session_state:
 SYSTEM_PROMPT = (
     "پاسخ‌های خود را در درجه اول بر اساس اطلاعات بازیابی‌شده از اسناد ارائه شده بنویسید. اما سعی کن دقیق سوال را پاسخ بدی "
     "اگر اطلاعات اسناد برای پاسخ کامل به سوال کافی نیست، این موضوع را صریحا بیان کنید و سپس با استفاده از دانش خود، پاسخ را تکمیل کنید."
-    
-    
 )
 
 @st.cache_resource
@@ -72,6 +75,13 @@ def search_questions(query, top_k=4):
     results = documents.iloc[indices[0]]
     return results
 
+def count_tokens(messages):
+    """Count the number of tokens in a list of messages."""
+    tokens = 0
+    for msg in messages:
+        tokens += len(tokenizer.encode(msg.content))
+    return tokens
+
 def chatbot(user_question, conversation):
     relevant_questions = search_questions(user_question)
     if relevant_questions.empty:
@@ -89,16 +99,28 @@ def chatbot(user_question, conversation):
     if retrieved_answer != "متأسفم، پاسخ مناسبی در دیتابیس پیدا نشد.":
         messages.append(HumanMessage(content=f"اطلاعات بازیابی‌شده:\n{retrieved_answer}"))
     
+    # Adding the conversation history to the messages
     for msg in conversation:
         if msg['role'] == 'user':
             messages.append(HumanMessage(content=msg['content']))
         else:
             messages.append(AIMessage(content=msg['content']))
-    messages.append(HumanMessage(content=user_question))
     
+    messages.append(HumanMessage(content=user_question))
+
+    # Count the tokens before sending the request
+    num_tokens = count_tokens(messages)
+    print(f"تعداد توکن‌ها: {num_tokens}")
+
+    # Check if the token count exceeds 8000
+    if num_tokens > 8000:
+        st.warning("تعداد توکن‌ها از 8K بیشتر شده است!")
+
+    # Send the messages to the model
     response = llm(messages=messages)
     return response.content, url
 
+# Display previous messages
 for msg in st.session_state['messages']:
     if msg['role'] == 'user':
         with st.chat_message("user"):
@@ -112,8 +134,7 @@ user_question = st.chat_input("سوال خود را وارد کنید:")
 if user_question and user_question.strip():
     st.session_state['messages'].append({"role": "user", "content": user_question})
     with st.chat_message("user"):
-        st.write(user_question) 
-
+        st.write(user_question)
 
     with st.chat_message("assistant"):
         with st.spinner("در حال پردازش..."):
