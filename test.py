@@ -64,7 +64,7 @@ def get_question_embeddings(question):
     embeddings = model.encode(sentences, batch_size=12, max_length=512)['dense_vecs']
     return embeddings[0]
 
-def search_questions(query, top_k=5):
+def search_questions(query, top_k=4):
     query_embedding = get_question_embeddings(query).astype('float16').reshape(1, -1)
     distances, indices = index.search(query_embedding, top_k)
     if indices[0][0] == -1:
@@ -74,39 +74,29 @@ def search_questions(query, top_k=5):
 
 def chatbot(user_question, conversation):
     relevant_questions = search_questions(user_question)
-    
-    # اگر اطلاعاتی پیدا نشد، پاسخ پیش‌فرض برگردانده شود
     if relevant_questions.empty:
         retrieved_answer = "متأسفم، پاسخ مناسبی در دیتابیس پیدا نشد."
         url = None
     else:
-        # فقط جدیدترین پاسخ بازیابی شود، بدون ذخیره در تاریخچه چت
-        first_result = relevant_questions.iloc[0]
-        retrieved_answer = f"سند: {first_result['title']}\nلینک: {first_result['url']}"
-        url = first_result['url']  
-    
+        retrieved_answers = [
+            f"سند: {row['title']}\nلینک: {row['url']}" 
+            for _, row in relevant_questions.reset_index().iterrows()
+        ]
+        retrieved_answer = "\n---\n".join(retrieved_answers)
+        url = relevant_questions.reset_index()['url'][0]  
+
     messages = [SystemMessage(content=SYSTEM_PROMPT)]
+    if retrieved_answer != "متأسفم، پاسخ مناسبی در دیتابیس پیدا نشد.":
+        messages.append(HumanMessage(content=f"اطلاعات بازیابی‌شده:\n{retrieved_answer}"))
     
-    # به‌جای افزودن اطلاعات بازیابی‌شده به تاریخچه، فقط در پاسخ جدید استفاده شود
-    latest_info = retrieved_answer if retrieved_answer != "متأسفم، پاسخ مناسبی در دیتابیس پیدا نشد." else None
-    
-    # اضافه کردن مکالمات قبلی به پیام‌ها (بدون ذخیره نتایج جستجو)
     for msg in conversation:
         if msg['role'] == 'user':
             messages.append(HumanMessage(content=msg['content']))
         else:
             messages.append(AIMessage(content=msg['content']))
-    
-    # اضافه کردن سوال جدید
     messages.append(HumanMessage(content=user_question))
     
-    # اگر اطلاعاتی بازیابی شده، آن را قبل از سوال کاربر اضافه کنیم
-    if latest_info:
-        messages.append(HumanMessage(content=f"اطلاعات مرتبط:\n{latest_info}"))
-    
-    # ارسال فقط اطلاعات ضروری به مدل LLM
     response = llm(messages=messages)
-    
     return response.content, url
 
 for msg in st.session_state['messages']:
