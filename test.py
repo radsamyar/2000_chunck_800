@@ -32,6 +32,7 @@ st.markdown(
 )
 st.write()
 
+# Initialize session state variables
 if 'messages' not in st.session_state:
     st.session_state['messages'] = []
 
@@ -70,7 +71,7 @@ def get_question_embeddings(question):
     embeddings = model.encode(sentences, batch_size=12, max_length=512)['dense_vecs']
     return embeddings[0]
 
-def search_questions(query, top_k=4):
+def search_questions(query, top_k=5):
     query_embedding = get_question_embeddings(query).astype('float16').reshape(1, -1)
     distances, indices = index.search(query_embedding, top_k)
     if indices[0][0] == -1:
@@ -126,7 +127,7 @@ def chatbot(user_question, conversation):
     response = llm(messages=messages)
     return response.content, url
 
-# Display previous messages
+# Display previous messages (only the last two user inputs and responses)
 for msg in st.session_state['messages']:
     if msg['role'] == 'user':
         with st.chat_message("user"):
@@ -138,14 +139,27 @@ for msg in st.session_state['messages']:
 user_question = st.chat_input("سوال خود را وارد کنید:")
 
 if user_question and user_question.strip():
+    # Add new user message
     st.session_state['messages'].append({"role": "user", "content": user_question})
+
+    # Limit stored messages to only the last two user inputs and responses (total 4)
+    if len(st.session_state['messages']) > 4:
+        st.session_state['messages'] = st.session_state['messages'][-4:]
+
     with st.chat_message("user"):
         st.write(user_question)
 
     with st.chat_message("assistant"):
         with st.spinner("در حال پردازش..."):
             answer, url = chatbot(user_question, st.session_state['messages'][:-1])
-            st.session_state['messages'].append({"role": "assistant", "content":url+"\n\n"+ answer})
+
+            # Add new assistant message
+            st.session_state['messages'].append({"role": "assistant", "content": url + "\n\n" + answer})
+
+            # Limit stored messages again after adding assistant response
+            if len(st.session_state['messages']) > 4:
+                st.session_state['messages'] = st.session_state['messages'][-4:]
+
             if url:
                 st.write(f"[لینک مرتبط به پاسخ]({url})")
             st.write("\n\n")
