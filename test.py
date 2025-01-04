@@ -35,6 +35,9 @@ st.write()
 if 'messages' not in st.session_state:
     st.session_state['messages'] = []
 
+if 'last_retrieved_answer' not in st.session_state:
+    st.session_state['last_retrieved_answer'] = ""
+
 SYSTEM_PROMPT = (
     "پاسخ‌های خود را در درجه اول بر اساس اطلاعات بازیابی‌شده از اسناد ارائه شده بنویسید. اما سعی کن دقیق سوال را پاسخ بدی "
     "اگر اطلاعات اسناد برای پاسخ کامل به سوال کافی نیست، این موضوع را صریحا بیان کنید و سپس با استفاده از دانش خود، پاسخ را تکمیل کنید."
@@ -95,6 +98,9 @@ def chatbot(user_question, conversation):
         retrieved_answer = "\n---\n".join(retrieved_answers)
         url = relevant_questions.reset_index()['url'][0]  
 
+    # Store only the last retrieved_answer
+    st.session_state['last_retrieved_answer'] = retrieved_answer
+
     messages = [SystemMessage(content=SYSTEM_PROMPT)]
     if retrieved_answer != "متأسفم، پاسخ مناسبی در دیتابیس پیدا نشد.":
         messages.append(HumanMessage(content=f"اطلاعات بازیابی‌شده:\n{retrieved_answer}"))
@@ -110,7 +116,7 @@ def chatbot(user_question, conversation):
 
     # Count the tokens before sending the request
     num_tokens = count_tokens(messages)
-    print(f"تعداد توکن‌ها: {num_tokens}")
+    st.write(f"تعداد توکن‌ها: {num_tokens}")
 
     # Check if the token count exceeds 8000
     if num_tokens > 8000:
