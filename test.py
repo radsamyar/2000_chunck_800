@@ -3,7 +3,7 @@ import streamlit as st
 import faiss
 import numpy as np
 import pandas as pd
-from FlagEmbedding import BGEM3FlagModel
+from FlagEmbedding import BGEM3FlagModel, FlagReranker
 from langchain_groq import ChatGroq
 from langchain.schema import SystemMessage, HumanMessage, AIMessage
 
@@ -39,9 +39,12 @@ if 'messages' not in st.session_state:
 if 'last_retrieved_answer' not in st.session_state:
     st.session_state['last_retrieved_answer'] = ""
 
+if 'rerank_enabled' not in st.session_state:
+    st.session_state['rerank_enabled'] = True  # Default is that rerank is enabled
+
 SYSTEM_PROMPT = (
-    "پاسخ‌های خود را در درجه اول بر اساس اطلاعات بازیابی‌شده از اسناد ارائه شده بنویسید. اما سعی کن دقیق سوال را پاسخ بدی "
-    "اگر اطلاعات اسناد برای پاسخ کامل به سوال کافی نیست، این موضوع را صریحا بیان کنید و سپس با استفاده از دانش خود، پاسخ را تکمیل کنید."
+    "پاسخ‌های خود را در درجه اول بر اساس اطلاعات بازیابی‌شده از اسناد ارائه دهید. "
+    "اگر اطلاعات کافی برای پاسخ به سوال نیست، این موضوع را صریحا بیان کنید و با استفاده از دانش خود، پاسخ را تکمیل کنید."
 )
 
 @st.cache_resource
@@ -60,6 +63,13 @@ def load_model():
 model = load_model()
 
 @st.cache_resource
+def load_reranker():
+    reranker = FlagReranker('BAAI/bge-reranker-v2-m3', use_fp16=True)  # Load reranker model
+    return reranker
+
+reranker = load_reranker()
+
+@st.cache_resource
 def load_llm():
     llm = ChatGroq(groq_api_key="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", model_name="Gemma2-9b-It")
     return llm
@@ -71,13 +81,21 @@ def get_question_embeddings(question):
     embeddings = model.encode(sentences, batch_size=12, max_length=512)['dense_vecs']
     return embeddings[0]
 
-def search_questions(query, top_k=5):
+def search_questions(query, top_k=10):
     query_embedding = get_question_embeddings(query).astype('float16').reshape(1, -1)
     distances, indices = index.search(query_embedding, top_k)
     if indices[0][0] == -1:
         return pd.DataFrame()
     results = documents.iloc[indices[0]]
     return results
+
+def rerank_documents(query, documents_df):
+    # Compute relevance scores for each document
+    doc_pairs = [[query, doc] for doc in documents_df['text'].tolist()]
+    scores = reranker.compute_score(doc_pairs, normalize=True)  # normalize to get score between 0-1
+    documents_df['score'] = scores
+    documents_df = documents_df.sort_values(by='score', ascending=False)  # Sort by score
+    return documents_df.head(3)  # Return only the top 3 ranked documents
 
 def count_tokens(messages):
     """Count the number of tokens in a list of messages."""
@@ -92,12 +110,26 @@ def chatbot(user_question, conversation):
         retrieved_answer = "متأسفم، پاسخ مناسبی در دیتابیس پیدا نشد."
         url = None
     else:
-        retrieved_answers = [
-            f"سند: {row['title']}\nلینک: {row['url']}" 
-            for _, row in relevant_questions.reset_index().iterrows()
-        ]
-        retrieved_answer = "\n---\n".join(retrieved_answers)
-        url = relevant_questions.reset_index()['url'][0]  
+        original_documents = relevant_questions.copy()
+        
+        # Rerank the documents if rerank is enabled
+        if st.session_state['rerank_enabled']:
+            reranked_documents = rerank_documents(user_question, relevant_questions)
+            if not reranked_documents.equals(original_documents):
+                st.write("ترتیب اسناد به دلیل ریرنک تغییر کرده است.")
+            retrieved_answers = [
+                f"سند: {row['title']}\nلینک: {row['url']}" 
+                for _, row in reranked_documents.iterrows()
+            ]
+            retrieved_answer = "\n---\n".join(retrieved_answers)
+            url = reranked_documents['url'].iloc[0]
+        else:
+            retrieved_answers = [
+                f"سند: {row['title']}\nلینک: {row['url']}" 
+                for _, row in relevant_questions.iterrows()
+            ]
+            retrieved_answer = "\n---\n".join(retrieved_answers)
+            url = relevant_questions['url'].iloc[0]
 
     # Store only the last retrieved_answer
     st.session_state['last_retrieved_answer'] = retrieved_answer
@@ -126,6 +158,12 @@ def chatbot(user_question, conversation):
     # Send the messages to the model
     response = llm(messages=messages)
     return response.content, url
+
+# Add a button to enable/disable rerank
+rerank_button = st.button("فعال/غیرفعال کردن ریرنک", key="rerank_button")
+if rerank_button:
+    st.session_state['rerank_enabled'] = not st.session_state['rerank_enabled']
+    st.write(f"ریرنک {'فعال' if st.session_state['rerank_enabled'] else 'غیرفعال'} شد.")
 
 # Display previous messages (only the last two user inputs and responses)
 for msg in st.session_state['messages']:
