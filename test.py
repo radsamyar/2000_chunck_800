@@ -91,7 +91,7 @@ def search_questions(query, top_k=10):
 
 def rerank_documents(query, documents_df):
     # Compute relevance scores for each document
-    doc_pairs = [[query, doc] for doc in documents_df['text'].tolist()]
+    doc_pairs = [[query, doc] for doc in documents_df['title'].tolist()]
     scores = reranker.compute_score(doc_pairs, normalize=True)  # normalize to get score between 0-1
     documents_df['score'] = scores
     documents_df = documents_df.sort_values(by='score', ascending=False)  # Sort by score
