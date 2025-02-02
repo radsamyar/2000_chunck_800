@@ -95,7 +95,7 @@ def rerank_documents(query, documents_df):
     scores = reranker.compute_score(doc_pairs, normalize=True)  # normalize to get score between 0-1
     documents_df['score'] = scores
     documents_df = documents_df.sort_values(by='score', ascending=False)  # Sort by score
-    return documents_df.head(3)  # Return only the top 3 ranked documents
+    return documents_df.head(2)  # Return only the top 3 ranked documents
 
 def count_tokens(messages):
     """Count the number of tokens in a list of messages."""
