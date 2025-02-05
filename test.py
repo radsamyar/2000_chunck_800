@@ -75,8 +75,8 @@ def load_index_and_docs() -> (faiss.Index, pd.DataFrame):
     """
     Load the FAISS index and corresponding documents.
     """
-    index = faiss.read_index("faiss_questions (4).index")
-    documents = pd.read_csv("questions (4).csv")
+    index = faiss.read_index("faiss_questions2000-800.index")
+    documents = pd.read_csv("faiss_questions2000-800.csv")
     return index, documents
 
 index, documents = load_index_and_docs()
