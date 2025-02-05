@@ -124,7 +124,7 @@ def get_question_embeddings(question: str) -> np.ndarray:
     result = model.encode([question], batch_size=12, max_length=512)
     return result['dense_vecs'][0]
 
-def search_questions(query: str, top_k: int = 10) -> pd.DataFrame:
+def search_questions(query: str, top_k: int = 7) -> pd.DataFrame:
     """
     Search the FAISS index for documents relevant to the query.
     """
